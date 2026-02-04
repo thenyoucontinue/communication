@@ -7,18 +7,21 @@ const multer = require("multer");
 const fs = require("fs");
 const crypto = require("crypto");
 const nodemailer = require('nodemailer');
+const Database = require('better-sqlite3');
+const sqliteDb = new Database('messenger.db');
+// Then update all db.xxx to sqliteDb.xxx in your code
 
 // Email verification storage (in production, use Redis or database)
 const verificationCodes = new Map();
 
 // Email transporter
-const transporter = nodemailer.createTransport({
+  const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
-    user: "parsadarayavauh0020@gmail.com",
-    pass: "btud ccnp jhrq fujt" // REPLACE WITH YOUR GOOGLE APP PASSWORD
+    user: process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com',
+    pass: process.env.GMAIL_PASS || 'btudccnpjhrqfujt'
   }
-});
+   });
 
 // Create uploads directory if it doesn't exist
 if (!fs.existsSync("uploads")) {
