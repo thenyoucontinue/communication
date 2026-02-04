@@ -776,9 +776,22 @@ function initializeDatabase() {
   }
 }
 
+// TEST ROUTE
+app.get("/test-button", (req, res) => {
+  res.send(`
+    <!DOCTYPE html>
+    <html>
+    <head><title>Test</title></head>
+    <body>
+        <h1>Server is working!</h1>
+        <button onclick="alert('Button works!')">Test Button</button>
+    </body>
+    </html>
+  `);
+});
+
 initializeDatabase();
 
-// Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
