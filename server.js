@@ -1,4 +1,3 @@
-// server.js - UPDATED FOR RENDER DEPLOYMENT
 const express = require("express");
 const session = require("express-session");
 const bcrypt = require('bcryptjs');
@@ -13,61 +12,36 @@ const nodemailer = require('nodemailer');
 // Email verification storage
 const verificationCodes = new Map();
 
-// Configure email transporter for both local and Render
+// Configure email transporter
 const createTransporter = () => {
-  // Use environment variables on Render, fallback to local config
   const emailUser = process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com';
   const emailPass = process.env.GMAIL_PASS || 'btudccnpjhrqfujt';
   
-  console.log('Email config:', { 
-    user: emailUser, 
-    hasPass: !!emailPass,
-    nodeEnv: process.env.NODE_ENV 
+  console.log('Email config loaded');
+  
+  return nodemailer.createTransport({
+    service: 'gmail',
+    auth: {
+      user: emailUser,
+      pass: emailPass
+    }
   });
-
-  // For Render deployment, we might need different configuration
-  if (process.env.NODE_ENV === 'production') {
-    // Alternative email service configuration
-    return nodemailer.createTransport({
-      host: process.env.SMTP_HOST || 'smtp.gmail.com',
-      port: process.env.SMTP_PORT || 587,
-      secure: false, // true for 465, false for other ports
-      requireTLS: true,
-      auth: {
-        user: emailUser,
-        pass: emailPass
-      },
-      tls: {
-        rejectUnauthorized: false // Important for some environments
-      }
-    });
-  } else {
-    // Local development
-    return nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        user: emailUser,
-        pass: emailPass
-      }
-    });
-  }
 };
 
 const transporter = createTransporter();
 
-// Verify transporter configuration
+// Verify transporter
 transporter.verify(function(error, success) {
   if (error) {
     console.error('Email transporter error:', error);
   } else {
-    console.log('Email transporter is ready to send messages');
+    console.log('Email transporter ready');
   }
 });
 
-// Configure multer for file uploads
+// Multer configuration
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
-    // Create uploads directory if it doesn't exist
     const uploadDir = path.join(__dirname, "uploads");
     if (!fs.existsSync(uploadDir)) {
       fs.mkdirSync(uploadDir, { recursive: true });
@@ -82,7 +56,7 @@ const storage = multer.diskStorage({
 
 const upload = multer({ 
   storage: storage,
-  limits: { fileSize: 50 * 1024 * 1024 }, // 50MB limit
+  limits: { fileSize: 50 * 1024 * 1024 },
   fileFilter: function (req, file, cb) {
     const allowedTypes = /jpeg|jpg|png|gif|mp4|webm|mov/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
@@ -91,143 +65,115 @@ const upload = multer({
     if (mimetype && extname) {
       return cb(null, true);
     } else {
-      cb(new Error("Only images and videos are allowed"));
+      cb(new Error("Only images and videos allowed"));
     }
   }
 });
 
 const app = express();
 
-// Session configuration for production
+// Session configuration
 const sessionConfig = {
   secret: process.env.SESSION_SECRET || "devsecret123",
   resave: false,
   saveUninitialized: false,
   cookie: { 
-    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    maxAge: 24 * 60 * 60 * 1000,
     secure: process.env.NODE_ENV === 'production',
     sameSite: 'lax'
   }
 };
 
-// Use memory store for sessions in production (simple, works with Render)
 if (process.env.NODE_ENV === 'production') {
   const MemoryStore = require('memorystore')(session);
   sessionConfig.store = new MemoryStore({
-    checkPeriod: 86400000 // prune expired entries every 24h
+    checkPeriod: 86400000
   });
 }
 
-// Middleware
+// Middleware - IMPORTANT: order matters!
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(session(sessionConfig));
 
-// Serve static files
-app.use(express.static(__dirname));
+// Serve ALL static files from the root directory
+app.use(express.static(path.join(__dirname)));
+
+// Serve uploads separately
 app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 
-// Home route
+// Debug middleware to log requests
+app.use((req, res, next) => {
+  console.log(`${req.method} ${req.url}`);
+  next();
+});
+
+// Home route - serve app.html
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "app.html"));
 });
 
-// Health check endpoint for Render
+// Health check
 app.get("/health", (req, res) => {
   res.json({ 
-    status: "healthy", 
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    status: "ok",
+    time: new Date().toISOString()
   });
 });
 
-// Username validation function
+// Username validation
 function isValidUsername(username) {
-  // Only allow letters, numbers, and underscore
   const usernameRegex = /^[a-zA-Z0-9_]+$/;
   return usernameRegex.test(username) && username.length >= 3;
 }
 
-// Generate 6-digit verification code
 function generateVerificationCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// Send verification email with better error handling
 function sendVerificationEmail(email, code) {
   return new Promise((resolve, reject) => {
     const mailOptions = {
-      from: {
-        name: 'Messenger App',
-        address: process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com'
-      },
+      from: process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com',
       to: email,
       subject: 'Verify Your Email - Messenger',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">Email Verification</h2>
-          <p>Your verification code is:</p>
-          <div style="background-color: #f0f0f0; padding: 20px; text-align: center; font-size: 32px; letter-spacing: 10px; font-weight: bold; margin: 20px 0;">
-            ${code}
-          </div>
-          <p>This code will expire in 10 minutes.</p>
-          <p>If you didn't request this verification, please ignore this email.</p>
-          <hr style="margin: 20px 0;">
-          <p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
-        </div>
-      `
+      html: `<h2>Your verification code: ${code}</h2><p>Valid for 10 minutes</p>`
     };
 
     transporter.sendMail(mailOptions, (error, info) => {
       if (error) {
-        console.error('Email send error:', error);
+        console.error('Email error:', error);
         reject(error);
       } else {
-        console.log('Email sent successfully:', info.response);
+        console.log('Email sent to:', email);
         resolve(info);
       }
     });
   });
 }
 
-// Send password reset email
 function sendPasswordResetEmail(email, code) {
   return new Promise((resolve, reject) => {
     const mailOptions = {
-      from: {
-        name: 'Messenger App',
-        address: process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com'
-      },
+      from: process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com',
       to: email,
-      subject: 'Reset Your Password - Messenger',
-      html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #333;">Password Reset Request</h2>
-          <p>You requested to reset your password. Use this code:</p>
-          <div style="background-color: #f0f0f0; padding: 20px; text-align: center; font-size: 32px; letter-spacing: 10px; font-weight: bold; margin: 20px 0;">
-            ${code}
-          </div>
-          <p>This code will expire in 10 minutes.</p>
-          <p>If you didn't request a password reset, please ignore this email.</p>
-          <hr style="margin: 20px 0;">
-          <p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
-        </div>
-      `
+      subject: 'Password Reset - Messenger',
+      html: `<h2>Reset code: ${code}</h2><p>Valid for 10 minutes</p>`
     };
 
     transporter.sendMail(mailOptions, (error, info) => {
       if (error) {
-        console.error('Reset email send error:', error);
+        console.error('Reset email error:', error);
         reject(error);
       } else {
-        console.log('Reset email sent successfully:', info.response);
+        console.log('Reset email sent to:', email);
         resolve(info);
       }
     });
   });
 }
 
-// Register endpoint with email verification
+// Register endpoint
 app.post("/register", async (req, res) => {
   try {
     const { username, email, password } = req.body;
@@ -236,43 +182,34 @@ app.post("/register", async (req, res) => {
       return res.status(400).json({ error: "All fields required" });
     }
 
-    // Validate username - only letters, numbers, and underscore
     if (!isValidUsername(username)) {
       return res.status(400).json({ 
-        error: "Username must be at least 3 characters and contain only letters, numbers, and underscores (_). No spaces or special characters allowed!" 
+        error: "Username: 3+ chars, letters/numbers/_ only" 
       });
     }
 
-    // Validate email format
     const emailRegex = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
     if (!emailRegex.test(email)) {
-      return res.status(400).json({ error: "Invalid email format. Please use a valid email (e.g., user@example.com)" });
+      return res.status(400).json({ error: "Invalid email format" });
     }
 
-    // Password validation
     if (password.length < 6) {
-      return res.status(400).json({ error: "Password must be at least 6 characters long" });
+      return res.status(400).json({ error: "Password must be 6+ chars" });
     }
 
-    // Check if username already exists
     const existingUser = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
-
     if (existingUser) {
-      return res.status(400).json({ error: "Username already exists" });
+      return res.status(400).json({ error: "Username exists" });
     }
 
-    // Check if email already exists
     const existingEmail = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
-
     if (existingEmail) {
-      return res.status(400).json({ error: "Email already registered" });
+      return res.status(400).json({ error: "Email registered" });
     }
 
-    // Generate verification code and token
     const verificationCode = generateVerificationCode();
     const verificationToken = crypto.randomBytes(32).toString('hex');
     
-    // Store verification data (expires in 10 minutes)
     verificationCodes.set(verificationToken, {
       code: verificationCode,
       username,
@@ -280,58 +217,41 @@ app.post("/register", async (req, res) => {
       password,
       attempts: 0,
       createdAt: Date.now(),
-      expiresAt: Date.now() + (10 * 60 * 1000) // 10 minutes
+      expiresAt: Date.now() + (10 * 60 * 1000)
     });
 
-    // Send verification email with error handling
     try {
       await sendVerificationEmail(email, verificationCode);
-      console.log(`Verification code sent to ${email}: ${verificationCode}`);
     } catch (emailError) {
-      console.error('Failed to send verification email:', emailError);
-      
-      // If email fails in production, still return success for testing
-      // In production, you might want to handle this differently
-      if (process.env.NODE_ENV === 'production') {
-        console.log('DEBUG MODE: Showing verification code instead of sending email');
-        // For testing on Render, return the code in response
-        return res.json({ 
-          success: true, 
-          message: "Email service unavailable. Use this verification code:",
-          verificationToken: verificationToken,
-          debugCode: verificationCode, // Only for debugging
-          note: "In production, this would be sent via email"
-        });
-      } else {
-        return res.status(500).json({ 
-          error: "Failed to send verification email. Please try again later." 
-        });
-      }
+      console.error('Email failed:', emailError);
+      // For debugging on Render, return code in response
+      return res.json({ 
+        success: true, 
+        message: "Debug: Code (email service down)",
+        verificationToken: verificationToken,
+        debugCode: verificationCode
+      });
     }
 
-    // Clean up expired codes
     setTimeout(() => {
       if (verificationCodes.has(verificationToken)) {
-        const data = verificationCodes.get(verificationToken);
-        if (Date.now() > data.expiresAt) {
-          verificationCodes.delete(verificationToken);
-        }
+        verificationCodes.delete(verificationToken);
       }
     }, 10 * 60 * 1000);
 
     res.json({ 
       success: true, 
-      message: "Verification code sent to your email",
+      message: "Verification code sent",
       verificationToken: verificationToken
     });
 
   } catch (error) {
-    console.error("Registration error:", error);
+    console.error("Register error:", error);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// Verify email endpoint
+// Verify email
 app.post("/verify-email", async (req, res) => {
   try {
     const { code, token, attempts } = req.body;
@@ -340,26 +260,22 @@ app.post("/verify-email", async (req, res) => {
       return res.status(400).json({ error: "Code and token required" });
     }
 
-    // Check if token exists
     if (!verificationCodes.has(token)) {
-      return res.status(400).json({ error: "Invalid or expired verification token. Please register again." });
+      return res.status(400).json({ error: "Invalid token" });
     }
 
     const verificationData = verificationCodes.get(token);
 
-    // Check if token has expired
     if (Date.now() > verificationData.expiresAt) {
       verificationCodes.delete(token);
-      return res.status(400).json({ error: "Verification code expired. Please register again." });
+      return res.status(400).json({ error: "Code expired" });
     }
 
-    // Check if too many attempts
     if (attempts > 3 || verificationData.attempts >= 3) {
       verificationCodes.delete(token);
-      return res.status(400).json({ error: "Too many incorrect attempts. Please register again." });
+      return res.status(400).json({ error: "Too many attempts" });
     }
 
-    // Verify the code
     if (code !== verificationData.code) {
       verificationData.attempts++;
       verificationCodes.set(token, verificationData);
@@ -367,62 +283,56 @@ app.post("/verify-email", async (req, res) => {
       const remainingAttempts = 3 - verificationData.attempts;
       if (remainingAttempts <= 0) {
         verificationCodes.delete(token);
-        return res.status(400).json({ error: "Too many incorrect attempts. Please register again." });
+        return res.status(400).json({ error: "Too many attempts" });
       }
       
       return res.status(400).json({ 
-        error: `Incorrect code. ${remainingAttempts} attempt(s) remaining.` 
+        error: `Incorrect. ${remainingAttempts} tries left.` 
       });
     }
 
-    // Code is correct, create the user
     const hash = await bcrypt.hash(verificationData.password, 10);
     
     const stmt = db.prepare("INSERT INTO users (username, email, password_hash, email_verified) VALUES (?, ?, ?, ?)");
     const result = stmt.run(verificationData.username, verificationData.email, hash, 1);
     const userId = result.lastInsertRowid;
 
-    // Delete the verification code
     verificationCodes.delete(token);
 
-    // Auto-login after verification
     req.session.userId = userId;
     req.session.username = verificationData.username;
 
     res.json({ 
       success: true, 
-      message: "Email verified successfully",
+      message: "Email verified",
       userId: userId,
       username: verificationData.username
     });
 
   } catch (error) {
-    console.error("Verification error:", error);
+    console.error("Verify error:", error);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// Forgot password endpoint
+// Forgot password
 app.post("/forgot-password", async (req, res) => {
   try {
     const { emailOrUsername } = req.body;
     
     if (!emailOrUsername) {
-      return res.status(400).json({ error: "Email or username required" });
+      return res.status(400).json({ error: "Email/username required" });
     }
 
-    // Check if user exists by email or username
     const user = db.prepare("SELECT id, username, email FROM users WHERE email = ? OR username = ?").get(emailOrUsername, emailOrUsername);
 
     if (!user) {
-      return res.status(400).json({ error: "No account found with this email or username" });
+      return res.status(400).json({ error: "No account found" });
     }
 
-    // Generate reset code and token
     const resetCode = generateVerificationCode();
     const resetToken = crypto.randomBytes(32).toString('hex');
     
-    // Store reset data (expires in 10 minutes)
     verificationCodes.set(resetToken, {
       code: resetCode,
       email: user.email,
@@ -432,47 +342,31 @@ app.post("/forgot-password", async (req, res) => {
       expiresAt: Date.now() + (10 * 60 * 1000)
     });
 
-    // Send reset email with error handling
     try {
       await sendPasswordResetEmail(user.email, resetCode);
-      console.log(`Reset code sent to ${user.email}: ${resetCode}`);
     } catch (emailError) {
-      console.error('Failed to send reset email:', emailError);
-      
-      if (process.env.NODE_ENV === 'production') {
-        console.log('DEBUG MODE: Showing reset code instead of sending email');
-        return res.json({ 
-          success: true, 
-          message: "Email service unavailable. Use this reset code:",
-          resetToken: resetToken,
-          debugCode: resetCode,
-          maskedEmail: "email-service@unavailable.com",
-          note: "In production, this would be sent via email"
-        });
-      } else {
-        return res.status(500).json({ 
-          error: "Failed to send reset email. Please try again later." 
-        });
-      }
+      console.error('Reset email failed:', emailError);
+      return res.json({ 
+        success: true, 
+        message: "Debug: Reset code (email down)",
+        resetToken: resetToken,
+        debugCode: resetCode,
+        maskedEmail: "email@debug.com"
+      });
     }
 
-    // Mask email for display (show first 2 chars and domain)
     const emailParts = user.email.split('@');
     const maskedEmail = emailParts[0].substring(0, 2) + '****@' + emailParts[1];
 
-    // Clean up expired codes
     setTimeout(() => {
       if (verificationCodes.has(resetToken)) {
-        const data = verificationCodes.get(resetToken);
-        if (Date.now() > data.expiresAt) {
-          verificationCodes.delete(resetToken);
-        }
+        verificationCodes.delete(resetToken);
       }
     }, 10 * 60 * 1000);
 
     res.json({ 
       success: true, 
-      message: "Reset code sent to your email",
+      message: "Reset code sent",
       resetToken: resetToken,
       maskedEmail: maskedEmail
     });
@@ -483,7 +377,7 @@ app.post("/forgot-password", async (req, res) => {
   }
 });
 
-// Reset password endpoint
+// Reset password
 app.post("/reset-password", async (req, res) => {
   try {
     const { code, token, newPassword, attempts } = req.body;
@@ -492,26 +386,22 @@ app.post("/reset-password", async (req, res) => {
       return res.status(400).json({ error: "All fields required" });
     }
 
-    // Check if token exists
     if (!verificationCodes.has(token)) {
-      return res.status(400).json({ error: "Invalid or expired reset token" });
+      return res.status(400).json({ error: "Invalid token" });
     }
 
     const resetData = verificationCodes.get(token);
 
-    // Check if token has expired
     if (Date.now() > resetData.expiresAt) {
       verificationCodes.delete(token);
-      return res.status(400).json({ error: "Reset code expired. Please try again." });
+      return res.status(400).json({ error: "Code expired" });
     }
 
-    // Check attempts
     if (attempts > 3 || resetData.attempts >= 3) {
       verificationCodes.delete(token);
-      return res.status(400).json({ error: "Too many incorrect attempts" });
+      return res.status(400).json({ error: "Too many attempts" });
     }
 
-    // Verify the code
     if (code !== resetData.code) {
       resetData.attempts++;
       verificationCodes.set(token, resetData);
@@ -519,58 +409,54 @@ app.post("/reset-password", async (req, res) => {
       const remainingAttempts = 3 - resetData.attempts;
       if (remainingAttempts <= 0) {
         verificationCodes.delete(token);
-        return res.status(400).json({ error: "Too many incorrect attempts" });
+        return res.status(400).json({ error: "Too many attempts" });
       }
       
       return res.status(400).json({ 
-        error: `Incorrect code. ${remainingAttempts} attempt(s) remaining.` 
+        error: `Incorrect. ${remainingAttempts} tries left.` 
       });
     }
 
-    // Validate new password
     if (newPassword.length < 6) {
-      return res.status(400).json({ error: "Password must be at least 6 characters" });
+      return res.status(400).json({ error: "Password 6+ chars" });
     }
 
-    // Update password
     const hash = await bcrypt.hash(newPassword, 10);
     
     db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, resetData.userId);
 
-    // Delete the reset token
     verificationCodes.delete(token);
 
     res.json({ 
       success: true, 
-      message: "Password reset successfully"
+      message: "Password reset"
     });
 
   } catch (error) {
-    console.error("Reset password error:", error);
+    console.error("Reset error:", error);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// Login endpoint - accepts both username and email
+// Login
 app.post("/login", async (req, res) => {
   try {
     const { usernameOrEmail, password } = req.body;
     
     if (!usernameOrEmail || !password) {
-      return res.status(400).json({ error: "Username/Email and password required" });
+      return res.status(400).json({ error: "Username/email and password required" });
     }
 
-    // Find user by username or email
     const user = db.prepare("SELECT * FROM users WHERE username = ? OR email = ?").get(usernameOrEmail, usernameOrEmail);
     
     if (!user) {
-      return res.status(401).json({ error: "Invalid username/email or password" });
+      return res.status(401).json({ error: "Invalid credentials" });
     }
     
     const validPassword = await bcrypt.compare(password, user.password_hash);
     
     if (!validPassword) {
-      return res.status(401).json({ error: "Invalid username/email or password" });
+      return res.status(401).json({ error: "Invalid credentials" });
     }
     
     req.session.userId = user.id;
@@ -589,7 +475,7 @@ app.post("/login", async (req, res) => {
   }
 });
 
-// Logout endpoint
+// Logout
 app.post("/logout", (req, res) => {
   req.session.destroy();
   res.json({ success: true, message: "Logged out" });
@@ -608,7 +494,7 @@ app.get("/me", (req, res) => {
   res.json(user);
 });
 
-// Update profile endpoint
+// Update profile
 app.post("/profile/update", (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Not logged in" });
@@ -616,24 +502,22 @@ app.post("/profile/update", (req, res) => {
   
   const { email, bio } = req.body;
   
-  // Validate email format
   const emailRegex = /^[^\s@]+@[^\s@]+\.[a-z]{2,}$/i;
   if (email && !emailRegex.test(email)) {
-    return res.status(400).json({ error: "Invalid email format" });
+    return res.status(400).json({ error: "Invalid email" });
   }
   
-  // Check if email is taken by another user
   const emailUser = db.prepare("SELECT id FROM users WHERE email = ? AND id != ?").get(email, req.session.userId);
   if (emailUser) {
-    return res.status(400).json({ error: "Email already in use" });
+    return res.status(400).json({ error: "Email in use" });
   }
   
   try {
     db.prepare("UPDATE users SET email = ?, bio = ? WHERE id = ?").run(email || "", bio || "", req.session.userId);
     res.json({ success: true, message: "Profile updated" });
   } catch (err) {
-    console.error("Update profile error:", err);
-    res.status(500).json({ error: "Failed to update profile" });
+    console.error("Update error:", err);
+    res.status(500).json({ error: "Update failed" });
   }
 });
 
@@ -644,7 +528,7 @@ app.post("/profile/picture", upload.single("profilePicture"), (req, res) => {
   }
   
   if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded" });
+    return res.status(400).json({ error: "No file" });
   }
   
   const filePath = "/uploads/" + req.file.filename;
@@ -653,15 +537,15 @@ app.post("/profile/picture", upload.single("profilePicture"), (req, res) => {
     db.prepare("UPDATE users SET profile_picture = ? WHERE id = ?").run(filePath, req.session.userId);
     res.json({ success: true, filePath: filePath });
   } catch (err) {
-    console.error("Update profile picture error:", err);
-    res.status(500).json({ error: "Failed to update profile picture" });
+    console.error("Upload error:", err);
+    res.status(500).json({ error: "Upload failed" });
   }
 });
 
-// Typing indicator storage
+// Typing storage
 const typingUsers = new Map();
 
-// Get all users with unread message counts and typing status
+// Get all users
 app.get("/users", (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Not logged in" });
@@ -678,7 +562,6 @@ app.get("/users", (req, res) => {
       WHERE u.id != ?
     `).all(req.session.userId, req.session.userId);
     
-    // Add typing status to each user
     users.forEach(user => {
       const key = `${user.id}-${req.session.userId}`;
       const typingData = typingUsers.get(key);
@@ -707,12 +590,12 @@ app.get("/users/search", (req, res) => {
     
     res.json(users);
   } catch (err) {
-    console.error("Search users error:", err);
+    console.error("Search error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// Typing indicator endpoints
+// Typing
 app.post("/typing", (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Not logged in" });
@@ -727,7 +610,6 @@ app.post("/typing", (req, res) => {
     timestamp: Date.now()
   });
   
-  // Clear typing indicator after 3 seconds
   setTimeout(() => {
     const data = typingUsers.get(key);
     if (data && Date.now() - data.timestamp >= 3000) {
@@ -738,7 +620,7 @@ app.post("/typing", (req, res) => {
   res.json({ success: true });
 });
 
-// Send message (text only)
+// Send message
 app.post("/send", (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Not logged in" });
@@ -756,12 +638,12 @@ app.post("/send", (req, res) => {
     
     res.json({ success: true, message: "Message sent", messageId: result.lastInsertRowid });
   } catch (err) {
-    console.error("Send message error:", err);
-    res.status(500).json({ error: "Failed to send message" });
+    console.error("Send error:", err);
+    res.status(500).json({ error: "Send failed" });
   }
 });
 
-// Send message with file
+// Send file
 app.post("/send/file", upload.single("file"), (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Not logged in" });
@@ -795,12 +677,12 @@ app.post("/send/file", upload.single("file"), (req, res) => {
       fileType: fileType
     });
   } catch (err) {
-    console.error("Send file message error:", err);
-    res.status(500).json({ error: "Failed to send message" });
+    console.error("File send error:", err);
+    res.status(500).json({ error: "Send failed" });
   }
 });
 
-// Get messages with typing status
+// Get messages
 app.get("/messages/:userId", (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Not logged in" });
@@ -823,7 +705,6 @@ app.get("/messages/:userId", (req, res) => {
       ORDER BY m.timestamp ASC
     `).all(req.session.userId, otherUserId, otherUserId, req.session.userId);
     
-    // Check if other user is typing
     const key = `${otherUserId}-${req.session.userId}`;
     const typingData = typingUsers.get(key);
     const isTyping = typingData && (Date.now() - typingData.timestamp < 3000);
@@ -833,12 +714,12 @@ app.get("/messages/:userId", (req, res) => {
       is_typing: isTyping
     });
   } catch (err) {
-    console.error("Get messages error:", err);
+    console.error("Messages error:", err);
     res.status(500).json({ error: "Server error" });
   }
 });
 
-// Mark messages as read
+// Mark read
 app.post("/messages/mark-read", (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Not logged in" });
@@ -858,10 +739,9 @@ app.post("/messages/mark-read", (req, res) => {
   }
 });
 
-// Initialize database tables
+// Initialize database
 function initializeDatabase() {
   try {
-    // Create users table
     db.exec(`
       CREATE TABLE IF NOT EXISTS users (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -875,7 +755,6 @@ function initializeDatabase() {
       )
     `);
     
-    // Create messages table
     db.exec(`
       CREATE TABLE IF NOT EXISTS messages (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -891,37 +770,16 @@ function initializeDatabase() {
       )
     `);
     
-    // Create indexes for better performance
-    db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_messages_sender_receiver 
-      ON messages(sender_id, receiver_id, timestamp)
-    `);
-    
-    db.exec(`
-      CREATE INDEX IF NOT EXISTS idx_messages_unread 
-      ON messages(sender_id, receiver_id, is_read) 
-      WHERE is_read = 0
-    `);
-    
-    console.log('Database initialized successfully');
+    console.log('Database ready');
   } catch (error) {
-    console.error('Database initialization error:', error);
+    console.error('DB init error:', error);
   }
 }
 
-// Initialize database on startup
 initializeDatabase();
-
-// Error handling middleware
-app.use((err, req, res, next) => {
-  console.error('Server error:', err);
-  res.status(500).json({ error: 'Internal server error' });
-});
 
 // Start server
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Messenger server running on port ${PORT}`);
-  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🌐 Health check: http://localhost:${PORT}/health`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
