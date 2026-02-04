@@ -1,5 +1,8 @@
-const sqlite3 = require("sqlite3").verbose();
-const db = new sqlite3.Database("./messenger.db");
+// db.js
+const Database = require('better-sqlite3');
+const db = new Database('messenger.db');
+
+module.exports = db;
 
 db.serialize(() => {
   // Create users table

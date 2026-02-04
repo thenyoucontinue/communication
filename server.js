@@ -1,36 +1,35 @@
+// server.js - REPLACE YOUR CODE WITH THIS:
 const express = require("express");
 const session = require("express-session");
 const bcrypt = require('bcryptjs');
-const db = require("./db");
+const Database = require('better-sqlite3');
+const db = new Database('messenger.db');  // SINGLE DATABASE CONNECTION
 const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
 const crypto = require("crypto");
 const nodemailer = require('nodemailer');
-const Database = require('better-sqlite3');
-const sqliteDb = new Database('messenger.db');
-// Then update all db.xxx to sqliteDb.xxx in your code
 
-// Email verification storage (in production, use Redis or database)
+// Email verification storage
 const verificationCodes = new Map();
 
 // Email transporter
-  const transporter = nodemailer.createTransport({
+const transporter = nodemailer.createTransport({
   service: 'gmail',
   auth: {
     user: process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com',
     pass: process.env.GMAIL_PASS || 'btudccnpjhrqfujt'
   }
-   });
-
-// Create uploads directory if it doesn't exist
-if (!fs.existsSync("uploads")) {
-  fs.mkdirSync("uploads");
-}
+});
 
 // Configure multer for file uploads
 const storage = multer.diskStorage({
   destination: function (req, file, cb) {
+    // Create uploads directory if it doesn't exist
+    const uploadDir = path.join(__dirname, "uploads");
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
     cb(null, "uploads/");
   },
   filename: function (req, file, cb) {
@@ -148,24 +147,14 @@ app.post("/register", async (req, res) => {
     }
 
     // Check if username already exists
-    const existingUser = await new Promise((resolve, reject) => {
-      db.get("SELECT id FROM users WHERE username = ?", [username], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
+    const existingUser = db.prepare("SELECT * FROM users WHERE username = ?").get(username);
 
     if (existingUser) {
       return res.status(400).json({ error: "Username already exists" });
     }
 
     // Check if email already exists
-    const existingEmail = await new Promise((resolve, reject) => {
-      db.get("SELECT id FROM users WHERE email = ?", [email], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
+    const existingEmail = db.prepare("SELECT id FROM users WHERE email = ?").get(email);
 
     if (existingEmail) {
       return res.status(400).json({ error: "Email already registered" });
@@ -258,16 +247,9 @@ app.post("/verify-email", async (req, res) => {
     // Code is correct, create the user
     const hash = await bcrypt.hash(verificationData.password, 10);
     
-    const userId = await new Promise((resolve, reject) => {
-      db.run(
-        "INSERT INTO users (username, email, password_hash, email_verified) VALUES (?, ?, ?, ?)",
-        [verificationData.username, verificationData.email, hash, 1],
-        function(err) {
-          if (err) reject(err);
-          else resolve(this.lastID);
-        }
-      );
-    });
+    const stmt = db.prepare("INSERT INTO users (username, email, password_hash, email_verified) VALUES (?, ?, ?, ?)");
+    const result = stmt.run(verificationData.username, verificationData.email, hash, 1);
+    const userId = result.lastInsertRowid;
 
     // Delete the verification code
     verificationCodes.delete(token);
@@ -299,12 +281,7 @@ app.post("/forgot-password", async (req, res) => {
     }
 
     // Check if user exists by email or username
-    const user = await new Promise((resolve, reject) => {
-      db.get("SELECT id, username, email FROM users WHERE email = ? OR username = ?", [emailOrUsername, emailOrUsername], (err, row) => {
-        if (err) reject(err);
-        else resolve(row);
-      });
-    });
+    const user = db.prepare("SELECT id, username, email FROM users WHERE email = ? OR username = ?").get(emailOrUsername, emailOrUsername);
 
     if (!user) {
       return res.status(400).json({ error: "No account found with this email or username" });
@@ -406,16 +383,7 @@ app.post("/reset-password", async (req, res) => {
     // Update password
     const hash = await bcrypt.hash(newPassword, 10);
     
-    await new Promise((resolve, reject) => {
-      db.run(
-        "UPDATE users SET password_hash = ? WHERE id = ?",
-        [hash, resetData.userId],
-        function(err) {
-          if (err) reject(err);
-          else resolve();
-        }
-      );
-    });
+    db.prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hash, resetData.userId);
 
     // Delete the reset token
     verificationCodes.delete(token);
@@ -441,16 +409,7 @@ app.post("/login", async (req, res) => {
     }
 
     // Find user by username or email
-    const user = await new Promise((resolve, reject) => {
-      db.get(
-        "SELECT * FROM users WHERE username = ? OR email = ?", 
-        [usernameOrEmail, usernameOrEmail], 
-        (err, row) => {
-          if (err) reject(err);
-          else resolve(row);
-        }
-      );
-    });
+    const user = db.prepare("SELECT * FROM users WHERE username = ? OR email = ?").get(usernameOrEmail, usernameOrEmail);
     
     if (!user) {
       return res.status(401).json({ error: "Invalid username/email or password" });
@@ -490,12 +449,11 @@ app.get("/me", (req, res) => {
     return res.status(401).json({ error: "Not logged in" });
   }
   
-  db.get("SELECT id, username, email, profile_picture, bio FROM users WHERE id = ?", [req.session.userId], (err, user) => {
-    if (err || !user) {
-      return res.status(500).json({ error: "Server error" });
-    }
-    res.json(user);
-  });
+  const user = db.prepare("SELECT id, username, email, profile_picture, bio FROM users WHERE id = ?").get(req.session.userId);
+  if (!user) {
+    return res.status(500).json({ error: "Server error" });
+  }
+  res.json(user);
 });
 
 // Update profile endpoint
@@ -513,22 +471,18 @@ app.post("/profile/update", (req, res) => {
   }
   
   // Check if email is taken by another user
-  db.get("SELECT id FROM users WHERE email = ? AND id != ?", [email, req.session.userId], (err, emailUser) => {
-    if (emailUser) {
-      return res.status(400).json({ error: "Email already in use" });
-    }
-    
-    db.run(
-      "UPDATE users SET email = ?, bio = ? WHERE id = ?",
-      [email || "", bio || "", req.session.userId],
-      function(err) {
-        if (err) {
-          return res.status(500).json({ error: "Failed to update profile" });
-        }
-        res.json({ success: true, message: "Profile updated" });
-      }
-    );
-  });
+  const emailUser = db.prepare("SELECT id FROM users WHERE email = ? AND id != ?").get(email, req.session.userId);
+  if (emailUser) {
+    return res.status(400).json({ error: "Email already in use" });
+  }
+  
+  try {
+    db.prepare("UPDATE users SET email = ?, bio = ? WHERE id = ?").run(email || "", bio || "", req.session.userId);
+    res.json({ success: true, message: "Profile updated" });
+  } catch (err) {
+    console.error("Update profile error:", err);
+    res.status(500).json({ error: "Failed to update profile" });
+  }
 });
 
 // Upload profile picture
@@ -543,17 +497,17 @@ app.post("/profile/picture", upload.single("profilePicture"), (req, res) => {
   
   const filePath = "/uploads/" + req.file.filename;
   
-  db.run(
-    "UPDATE users SET profile_picture = ? WHERE id = ?",
-    [filePath, req.session.userId],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: "Failed to update profile picture" });
-      }
-      res.json({ success: true, filePath: filePath });
-    }
-  );
+  try {
+    db.prepare("UPDATE users SET profile_picture = ? WHERE id = ?").run(filePath, req.session.userId);
+    res.json({ success: true, filePath: filePath });
+  } catch (err) {
+    console.error("Update profile picture error:", err);
+    res.status(500).json({ error: "Failed to update profile picture" });
+  }
 });
+
+// Typing indicator storage
+const typingUsers = new Map();
 
 // Get all users with unread message counts and typing status
 app.get("/users", (req, res) => {
@@ -561,30 +515,29 @@ app.get("/users", (req, res) => {
     return res.status(401).json({ error: "Not logged in" });
   }
   
-  db.all(
-    `SELECT u.id, u.username, u.profile_picture, u.bio,
+  try {
+    const users = db.prepare(`
+      SELECT u.id, u.username, u.profile_picture, u.bio,
             (SELECT COUNT(*) FROM messages 
              WHERE sender_id = u.id 
              AND receiver_id = ? 
              AND is_read = 0) as unread_count
-     FROM users u
-     WHERE u.id != ?`,
-    [req.session.userId, req.session.userId],
-    (err, users) => {
-      if (err) {
-        return res.status(500).json({ error: "Server error" });
-      }
-      
-      // Add typing status to each user
-      users.forEach(user => {
-        const key = `${user.id}-${req.session.userId}`;
-        const typingData = typingUsers.get(key);
-        user.is_typing = typingData && (Date.now() - typingData.timestamp < 3000);
-      });
-      
-      res.json(users);
-    }
-  );
+      FROM users u
+      WHERE u.id != ?
+    `).all(req.session.userId, req.session.userId);
+    
+    // Add typing status to each user
+    users.forEach(user => {
+      const key = `${user.id}-${req.session.userId}`;
+      const typingData = typingUsers.get(key);
+      user.is_typing = typingData && (Date.now() - typingData.timestamp < 3000);
+    });
+    
+    res.json(users);
+  } catch (err) {
+    console.error("Get users error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // Search users
@@ -595,21 +548,19 @@ app.get("/users/search", (req, res) => {
   
   const query = req.query.q || "";
   
-  db.all(
-    "SELECT id, username, profile_picture, bio FROM users WHERE id != ? AND username LIKE ?",
-    [req.session.userId, `%${query}%`],
-    (err, users) => {
-      if (err) {
-        return res.status(500).json({ error: "Server error" });
-      }
-      res.json(users);
-    }
-  );
+  try {
+    const users = db.prepare(
+      "SELECT id, username, profile_picture, bio FROM users WHERE id != ? AND username LIKE ?"
+    ).all(req.session.userId, `%${query}%`);
+    
+    res.json(users);
+  } catch (err) {
+    console.error("Search users error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // Typing indicator endpoints
-const typingUsers = new Map();
-
 app.post("/typing", (req, res) => {
   if (!req.session.userId) {
     return res.status(401).json({ error: "Not logged in" });
@@ -647,16 +598,15 @@ app.post("/send", (req, res) => {
     return res.status(400).json({ error: "Recipient and message required" });
   }
   
-  db.run(
-    "INSERT INTO messages (sender_id, receiver_id, message) VALUES (?, ?, ?)",
-    [req.session.userId, to, message],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: "Failed to send message" });
-      }
-      res.json({ success: true, message: "Message sent", messageId: this.lastID });
-    }
-  );
+  try {
+    const stmt = db.prepare("INSERT INTO messages (sender_id, receiver_id, message) VALUES (?, ?, ?)");
+    const result = stmt.run(req.session.userId, to, message);
+    
+    res.json({ success: true, message: "Message sent", messageId: result.lastInsertRowid });
+  } catch (err) {
+    console.error("Send message error:", err);
+    res.status(500).json({ error: "Failed to send message" });
+  }
 });
 
 // Send message with file
@@ -679,22 +629,23 @@ app.post("/send/file", upload.single("file"), (req, res) => {
     fileType = req.file.mimetype.startsWith("video/") ? "video" : "image";
   }
   
-  db.run(
-    "INSERT INTO messages (sender_id, receiver_id, message, file_path, file_type) VALUES (?, ?, ?, ?, ?)",
-    [req.session.userId, to, message || "", filePath, fileType],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: "Failed to send message" });
-      }
-      res.json({ 
-        success: true, 
-        message: "Message sent", 
-        messageId: this.lastID,
-        filePath: filePath,
-        fileType: fileType
-      });
-    }
-  );
+  try {
+    const stmt = db.prepare(
+      "INSERT INTO messages (sender_id, receiver_id, message, file_path, file_type) VALUES (?, ?, ?, ?, ?)"
+    );
+    const result = stmt.run(req.session.userId, to, message || "", filePath, fileType);
+    
+    res.json({ 
+      success: true, 
+      message: "Message sent", 
+      messageId: result.lastInsertRowid,
+      filePath: filePath,
+      fileType: fileType
+    });
+  } catch (err) {
+    console.error("Send file message error:", err);
+    res.status(500).json({ error: "Failed to send message" });
+  }
 });
 
 // Get messages with typing status
@@ -705,35 +656,34 @@ app.get("/messages/:userId", (req, res) => {
   
   const otherUserId = req.params.userId;
   
-  db.all(
-    `SELECT m.*, 
+  try {
+    const messages = db.prepare(`
+      SELECT m.*, 
             sender.username as sender_username,
             sender.profile_picture as sender_picture,
             receiver.username as receiver_username,
             receiver.profile_picture as receiver_picture
-     FROM messages m
-     JOIN users sender ON m.sender_id = sender.id
-     JOIN users receiver ON m.receiver_id = receiver.id
-     WHERE (m.sender_id = ? AND m.receiver_id = ?)
+      FROM messages m
+      JOIN users sender ON m.sender_id = sender.id
+      JOIN users receiver ON m.receiver_id = receiver.id
+      WHERE (m.sender_id = ? AND m.receiver_id = ?)
         OR (m.sender_id = ? AND m.receiver_id = ?)
-     ORDER BY m.timestamp ASC`,
-    [req.session.userId, otherUserId, otherUserId, req.session.userId],
-    (err, messages) => {
-      if (err) {
-        return res.status(500).json({ error: "Server error" });
-      }
-      
-      // Check if other user is typing
-      const key = `${otherUserId}-${req.session.userId}`;
-      const typingData = typingUsers.get(key);
-      const isTyping = typingData && (Date.now() - typingData.timestamp < 3000);
-      
-      res.json({
-        messages: messages,
-        is_typing: isTyping
-      });
-    }
-  );
+      ORDER BY m.timestamp ASC
+    `).all(req.session.userId, otherUserId, otherUserId, req.session.userId);
+    
+    // Check if other user is typing
+    const key = `${otherUserId}-${req.session.userId}`;
+    const typingData = typingUsers.get(key);
+    const isTyping = typingData && (Date.now() - typingData.timestamp < 3000);
+    
+    res.json({
+      messages: messages,
+      is_typing: isTyping
+    });
+  } catch (err) {
+    console.error("Get messages error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
 // Mark messages as read
@@ -744,128 +694,65 @@ app.post("/messages/mark-read", (req, res) => {
   
   const { from } = req.body;
   
-  db.run(
-    "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0",
-    [from, req.session.userId],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: "Server error" });
-      }
-      res.json({ success: true });
-    }
-  );
+  try {
+    db.prepare(
+      "UPDATE messages SET is_read = 1 WHERE sender_id = ? AND receiver_id = ? AND is_read = 0"
+    ).run(from, req.session.userId);
+    
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Mark read error:", err);
+    res.status(500).json({ error: "Server error" });
+  }
 });
 
-// ADD THESE FUNCTIONS TO YOUR app.js FILE
-// Place them at the bottom of your existing app.js
-
-// ==================== FORGOT PASSWORD FUNCTIONS ====================
-
-// Forgot password variables
-let resetToken = null;
-let resetAttempts = 0;
-
-function showForgotPassword() {
-    switchAuthTab('forgot');
-    document.getElementById('forgotEmailOrUsername').value = '';
-    document.getElementById('forgotError').textContent = '';
-    document.getElementById('forgotSuccess').textContent = '';
+// Initialize database tables
+function initializeDatabase() {
+  // Create users table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      profile_picture TEXT DEFAULT '',
+      bio TEXT DEFAULT '',
+      email_verified INTEGER DEFAULT 0,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+  
+  // Create messages table
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      sender_id INTEGER NOT NULL,
+      receiver_id INTEGER NOT NULL,
+      message TEXT DEFAULT '',
+      file_path TEXT DEFAULT '',
+      file_type TEXT DEFAULT '',
+      is_read INTEGER DEFAULT 0,
+      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (sender_id) REFERENCES users(id),
+      FOREIGN KEY (receiver_id) REFERENCES users(id)
+    )
+  `);
+  
+  // Create indexes for better performance
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_messages_sender_receiver 
+    ON messages(sender_id, receiver_id, timestamp)
+  `);
+  
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_messages_unread 
+    ON messages(sender_id, receiver_id, is_read) 
+    WHERE is_read = 0
+  `);
 }
 
-function requestPasswordReset() {
-    const emailOrUsername = document.getElementById('forgotEmailOrUsername').value;
-    const errorDiv = document.getElementById('forgotError');
-    const successDiv = document.getElementById('forgotSuccess');
-    
-    errorDiv.textContent = '';
-    successDiv.textContent = '';
-    
-    if (!emailOrUsername) {
-        errorDiv.textContent = 'Please enter your email or username';
-        return;
-    }
-    
-    fetch('/forgot-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ emailOrUsername })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.error) {
-            errorDiv.textContent = data.error;
-        } else {
-            resetToken = data.resetToken;
-            resetAttempts = 0;
-            successDiv.textContent = `Reset code sent to ${data.maskedEmail}`;
-            document.getElementById('resetEmail').textContent = data.maskedEmail;
-            document.getElementById('resetPasswordModal').classList.add('active');
-            document.getElementById('resetCode').value = '';
-            document.getElementById('newPassword').value = '';
-            document.getElementById('resetError').textContent = '';
-        }
-    })
-    .catch(err => {
-        errorDiv.textContent = 'Network error. Please try again.';
-    });
-}
-
-function resetPassword() {
-    const code = document.getElementById('resetCode').value;
-    const newPassword = document.getElementById('newPassword').value;
-    const errorDiv = document.getElementById('resetError');
-    
-    errorDiv.textContent = '';
-    
-    if (!code || !newPassword) {
-        errorDiv.textContent = 'Please enter code and new password';
-        return;
-    }
-    
-    if (code.length !== 6) {
-        errorDiv.textContent = 'Code must be 6 digits';
-        return;
-    }
-    
-    resetAttempts++;
-    
-    fetch('/reset-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, token: resetToken, newPassword, attempts: resetAttempts })
-    })
-    .then(res => res.json())
-    .then(data => {
-        if (data.error) {
-            errorDiv.textContent = data.error;
-        } else {
-            document.getElementById('resetPasswordModal').classList.remove('active');
-            switchAuthTab('login');
-            alert('Password reset successfully! You can now login.');
-        }
-    })
-    .catch(err => {
-        errorDiv.textContent = 'Network error. Please try again.';
-    });
-}
-
-// UPDATE YOUR EXISTING switchAuthTab FUNCTION TO THIS:
-function switchAuthTab(tab) {
-    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-    document.querySelectorAll('.auth-form').forEach(form => form.classList.remove('active'));
-    
-    if (tab === 'login') {
-        document.querySelectorAll('.tab-btn')[0].classList.add('active');
-        document.getElementById('loginForm').classList.add('active');
-    } else if (tab === 'register') {
-        document.querySelectorAll('.tab-btn')[1].classList.add('active');
-        document.getElementById('registerForm').classList.add('active');
-    } else if (tab === 'forgot') {
-        document.getElementById('forgotPasswordForm').classList.add('active');
-    }
-}
-
-// ==================== END OF FORGOT PASSWORD FUNCTIONS ====================
+// Initialize database on startup
+initializeDatabase();
 
 // Start server
 const PORT = 3000;
