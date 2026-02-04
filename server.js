@@ -1,9 +1,9 @@
-// server.js - REPLACE YOUR CODE WITH THIS:
+// server.js - UPDATED FOR RENDER DEPLOYMENT
 const express = require("express");
 const session = require("express-session");
 const bcrypt = require('bcryptjs');
 const Database = require('better-sqlite3');
-const db = new Database('messenger.db');  // SINGLE DATABASE CONNECTION
+const db = new Database('messenger.db', { verbose: console.log });
 const path = require("path");
 const multer = require("multer");
 const fs = require("fs");
@@ -13,12 +13,54 @@ const nodemailer = require('nodemailer');
 // Email verification storage
 const verificationCodes = new Map();
 
-// Email transporter
-const transporter = nodemailer.createTransport({
-  service: 'gmail',
-  auth: {
-    user: process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com',
-    pass: process.env.GMAIL_PASS || 'btudccnpjhrqfujt'
+// Configure email transporter for both local and Render
+const createTransporter = () => {
+  // Use environment variables on Render, fallback to local config
+  const emailUser = process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com';
+  const emailPass = process.env.GMAIL_PASS || 'btudccnpjhrqfujt';
+  
+  console.log('Email config:', { 
+    user: emailUser, 
+    hasPass: !!emailPass,
+    nodeEnv: process.env.NODE_ENV 
+  });
+
+  // For Render deployment, we might need different configuration
+  if (process.env.NODE_ENV === 'production') {
+    // Alternative email service configuration
+    return nodemailer.createTransport({
+      host: process.env.SMTP_HOST || 'smtp.gmail.com',
+      port: process.env.SMTP_PORT || 587,
+      secure: false, // true for 465, false for other ports
+      requireTLS: true,
+      auth: {
+        user: emailUser,
+        pass: emailPass
+      },
+      tls: {
+        rejectUnauthorized: false // Important for some environments
+      }
+    });
+  } else {
+    // Local development
+    return nodemailer.createTransport({
+      service: 'gmail',
+      auth: {
+        user: emailUser,
+        pass: emailPass
+      }
+    });
+  }
+};
+
+const transporter = createTransporter();
+
+// Verify transporter configuration
+transporter.verify(function(error, success) {
+  if (error) {
+    console.error('Email transporter error:', error);
+  } else {
+    console.log('Email transporter is ready to send messages');
   }
 });
 
@@ -56,15 +98,30 @@ const upload = multer({
 
 const app = express();
 
+// Session configuration for production
+const sessionConfig = {
+  secret: process.env.SESSION_SECRET || "devsecret123",
+  resave: false,
+  saveUninitialized: false,
+  cookie: { 
+    maxAge: 24 * 60 * 60 * 1000, // 24 hours
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax'
+  }
+};
+
+// Use memory store for sessions in production (simple, works with Render)
+if (process.env.NODE_ENV === 'production') {
+  const MemoryStore = require('memorystore')(session);
+  sessionConfig.store = new MemoryStore({
+    checkPeriod: 86400000 // prune expired entries every 24h
+  });
+}
+
 // Middleware
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-app.use(session({
-  secret: "devsecret123",
-  resave: false,
-  saveUninitialized: false,
-  cookie: { maxAge: 24 * 60 * 60 * 1000 } // 24 hours
-}));
+app.use(session(sessionConfig));
 
 // Serve static files
 app.use(express.static(__dirname));
@@ -73,6 +130,15 @@ app.use("/uploads", express.static(path.join(__dirname, "uploads")));
 // Home route
 app.get("/", (req, res) => {
   res.sendFile(path.join(__dirname, "app.html"));
+});
+
+// Health check endpoint for Render
+app.get("/health", (req, res) => {
+  res.json({ 
+    status: "healthy", 
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
 });
 
 // Username validation function
@@ -87,35 +153,77 @@ function generateVerificationCode() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
 
-// Send verification email
+// Send verification email with better error handling
 function sendVerificationEmail(email, code) {
-  transporter.sendMail({
-    from: 'ifneed0020@gmail.com',
-    to: email,
-    subject: 'Verify Your Email - Messenger',
-    html: `<h1>Your verification code: ${code}</h1><p>Valid for 10 minutes</p>`
-  }, (error, info) => {
-    if (error) {
-      console.log('Email error:', error);
-    } else {
-      console.log('Email sent:', info.response);
-    }
+  return new Promise((resolve, reject) => {
+    const mailOptions = {
+      from: {
+        name: 'Messenger App',
+        address: process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com'
+      },
+      to: email,
+      subject: 'Verify Your Email - Messenger',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Email Verification</h2>
+          <p>Your verification code is:</p>
+          <div style="background-color: #f0f0f0; padding: 20px; text-align: center; font-size: 32px; letter-spacing: 10px; font-weight: bold; margin: 20px 0;">
+            ${code}
+          </div>
+          <p>This code will expire in 10 minutes.</p>
+          <p>If you didn't request this verification, please ignore this email.</p>
+          <hr style="margin: 20px 0;">
+          <p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
+        </div>
+      `
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error('Email send error:', error);
+        reject(error);
+      } else {
+        console.log('Email sent successfully:', info.response);
+        resolve(info);
+      }
+    });
   });
 }
 
 // Send password reset email
 function sendPasswordResetEmail(email, code) {
-  transporter.sendMail({
-    from: 'ifneed0020@gmail.com',
-    to: email,
-    subject: 'Reset Your Password - Messenger',
-    html: `<h1>Password Reset Code: ${code}</h1><p>Valid for 10 minutes</p><p>If you didn't request this, ignore this email.</p>`
-  }, (error, info) => {
-    if (error) {
-      console.log('Email error:', error);
-    } else {
-      console.log('Email sent:', info.response);
-    }
+  return new Promise((resolve, reject) => {
+    const mailOptions = {
+      from: {
+        name: 'Messenger App',
+        address: process.env.GMAIL_USER || 'parsadarayavauh0020@gmail.com'
+      },
+      to: email,
+      subject: 'Reset Your Password - Messenger',
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2 style="color: #333;">Password Reset Request</h2>
+          <p>You requested to reset your password. Use this code:</p>
+          <div style="background-color: #f0f0f0; padding: 20px; text-align: center; font-size: 32px; letter-spacing: 10px; font-weight: bold; margin: 20px 0;">
+            ${code}
+          </div>
+          <p>This code will expire in 10 minutes.</p>
+          <p>If you didn't request a password reset, please ignore this email.</p>
+          <hr style="margin: 20px 0;">
+          <p style="color: #666; font-size: 12px;">This is an automated message, please do not reply.</p>
+        </div>
+      `
+    };
+
+    transporter.sendMail(mailOptions, (error, info) => {
+      if (error) {
+        console.error('Reset email send error:', error);
+        reject(error);
+      } else {
+        console.log('Reset email sent successfully:', info.response);
+        resolve(info);
+      }
+    });
   });
 }
 
@@ -175,8 +283,31 @@ app.post("/register", async (req, res) => {
       expiresAt: Date.now() + (10 * 60 * 1000) // 10 minutes
     });
 
-    // Send verification email
-    sendVerificationEmail(email, verificationCode);
+    // Send verification email with error handling
+    try {
+      await sendVerificationEmail(email, verificationCode);
+      console.log(`Verification code sent to ${email}: ${verificationCode}`);
+    } catch (emailError) {
+      console.error('Failed to send verification email:', emailError);
+      
+      // If email fails in production, still return success for testing
+      // In production, you might want to handle this differently
+      if (process.env.NODE_ENV === 'production') {
+        console.log('DEBUG MODE: Showing verification code instead of sending email');
+        // For testing on Render, return the code in response
+        return res.json({ 
+          success: true, 
+          message: "Email service unavailable. Use this verification code:",
+          verificationToken: verificationToken,
+          debugCode: verificationCode, // Only for debugging
+          note: "In production, this would be sent via email"
+        });
+      } else {
+        return res.status(500).json({ 
+          error: "Failed to send verification email. Please try again later." 
+        });
+      }
+    }
 
     // Clean up expired codes
     setTimeout(() => {
@@ -301,8 +432,29 @@ app.post("/forgot-password", async (req, res) => {
       expiresAt: Date.now() + (10 * 60 * 1000)
     });
 
-    // Send reset email
-    sendPasswordResetEmail(user.email, resetCode);
+    // Send reset email with error handling
+    try {
+      await sendPasswordResetEmail(user.email, resetCode);
+      console.log(`Reset code sent to ${user.email}: ${resetCode}`);
+    } catch (emailError) {
+      console.error('Failed to send reset email:', emailError);
+      
+      if (process.env.NODE_ENV === 'production') {
+        console.log('DEBUG MODE: Showing reset code instead of sending email');
+        return res.json({ 
+          success: true, 
+          message: "Email service unavailable. Use this reset code:",
+          resetToken: resetToken,
+          debugCode: resetCode,
+          maskedEmail: "email-service@unavailable.com",
+          note: "In production, this would be sent via email"
+        });
+      } else {
+        return res.status(500).json({ 
+          error: "Failed to send reset email. Please try again later." 
+        });
+      }
+    }
 
     // Mask email for display (show first 2 chars and domain)
     const emailParts = user.email.split('@');
@@ -708,55 +860,68 @@ app.post("/messages/mark-read", (req, res) => {
 
 // Initialize database tables
 function initializeDatabase() {
-  // Create users table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS users (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      username TEXT UNIQUE NOT NULL,
-      email TEXT UNIQUE NOT NULL,
-      password_hash TEXT NOT NULL,
-      profile_picture TEXT DEFAULT '',
-      bio TEXT DEFAULT '',
-      email_verified INTEGER DEFAULT 0,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-    )
-  `);
-  
-  // Create messages table
-  db.exec(`
-    CREATE TABLE IF NOT EXISTS messages (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      sender_id INTEGER NOT NULL,
-      receiver_id INTEGER NOT NULL,
-      message TEXT DEFAULT '',
-      file_path TEXT DEFAULT '',
-      file_type TEXT DEFAULT '',
-      is_read INTEGER DEFAULT 0,
-      timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (sender_id) REFERENCES users(id),
-      FOREIGN KEY (receiver_id) REFERENCES users(id)
-    )
-  `);
-  
-  // Create indexes for better performance
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_messages_sender_receiver 
-    ON messages(sender_id, receiver_id, timestamp)
-  `);
-  
-  db.exec(`
-    CREATE INDEX IF NOT EXISTS idx_messages_unread 
-    ON messages(sender_id, receiver_id, is_read) 
-    WHERE is_read = 0
-  `);
+  try {
+    // Create users table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS users (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT UNIQUE NOT NULL,
+        email TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        profile_picture TEXT DEFAULT '',
+        bio TEXT DEFAULT '',
+        email_verified INTEGER DEFAULT 0,
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+      )
+    `);
+    
+    // Create messages table
+    db.exec(`
+      CREATE TABLE IF NOT EXISTS messages (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id INTEGER NOT NULL,
+        receiver_id INTEGER NOT NULL,
+        message TEXT DEFAULT '',
+        file_path TEXT DEFAULT '',
+        file_type TEXT DEFAULT '',
+        is_read INTEGER DEFAULT 0,
+        timestamp DATETIME DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (sender_id) REFERENCES users(id),
+        FOREIGN KEY (receiver_id) REFERENCES users(id)
+      )
+    `);
+    
+    // Create indexes for better performance
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_messages_sender_receiver 
+      ON messages(sender_id, receiver_id, timestamp)
+    `);
+    
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS idx_messages_unread 
+      ON messages(sender_id, receiver_id, is_read) 
+      WHERE is_read = 0
+    `);
+    
+    console.log('Database initialized successfully');
+  } catch (error) {
+    console.error('Database initialization error:', error);
+  }
 }
 
 // Initialize database on startup
 initializeDatabase();
 
+// Error handling middleware
+app.use((err, req, res, next) => {
+  console.error('Server error:', err);
+  res.status(500).json({ error: 'Internal server error' });
+});
+
 // Start server
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`🚀 Messenger server running at http://localhost:${PORT}`);
-  console.log(`📝 Open your browser and go to http://localhost:${PORT}`);
+  console.log(`🚀 Messenger server running on port ${PORT}`);
+  console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+  console.log(`🌐 Health check: http://localhost:${PORT}/health`);
 });
