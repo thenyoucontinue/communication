@@ -1,0 +1,27 @@
+{
+  "name": "simple-messenger",
+  "version": "1.0.0",
+  "description": "A simple messenger app for learning cybersecurity",
+  "main": "app.js",
+  "scripts": {
+    "start": "node app.js",
+    "dev": "node app.js"
+  },
+  "keywords": [
+    "messenger",
+    "chat",
+    "learning",
+    "cybersecurity"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "@sendgrid/mail": "^8.1.6",
+    "bcrypt": "^5.1.1",
+    "express": "^4.22.1",
+    "express-session": "^1.19.0",
+    "multer": "^2.0.2",
+    "nodemailer": "^7.0.13",
+    "sqlite3": "^5.1.7"
+  }
+}

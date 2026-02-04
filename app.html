@@ -1,0 +1,1047 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Messenger - Enhanced</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+            background: linear-gradient(135deg, #ff0000 0%, #1e00ff 100%);
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+            max-width: 1200px;
+            width: 100%;
+            overflow: hidden;
+        }
+
+        /* Auth Screen */
+        .auth-screen {
+            padding: 60px 40px;
+            text-align: center;
+        }
+
+        .auth-screen h1 {
+            color: #ed0000;
+            margin-bottom: 40px;
+            font-size: 2.5em;
+        }
+
+        .auth-tabs {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 30px;
+            justify-content: center;
+        }
+
+        .tab-btn {
+            padding: 12px 40px;
+            background: #f0f0f0;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-size: 16px;
+            font-weight: 600;
+            transition: all 0.3s;
+        }
+
+        .tab-btn.active {
+            background: #ff0000;
+            color: white;
+        }
+
+        .auth-form {
+            display: none;
+        }
+
+        .auth-form.active {
+            display: block;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        .form-group input {
+            width: 100%;
+            max-width: 400px;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 16px;
+            transition: border-color 0.3s;
+        }
+
+        .form-group input:focus {
+            outline: none;
+            border-color: #ff0000;
+        }
+
+        .btn-primary {
+            background: #ff0000;
+            color: white;
+            border: none;
+            padding: 15px 60px;
+            border-radius: 25px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .btn-primary:hover {
+            background: #0026ff;
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .error-message {
+            color: #e74c3c;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        .success-message {
+            color: #0aff2b;
+            margin-top: 15px;
+            font-size: 14px;
+        }
+
+        /* Verification Modal */
+        .verification-modal {
+            display: none;
+            position: fixed;
+            z-index: 10000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.8);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .verification-modal.active {
+            display: flex;
+        }
+
+        .verification-content {
+            background: white;
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 450px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .verification-content h2 {
+            color: #ff0000;
+            margin-bottom: 20px;
+        }
+
+        .verification-content p {
+            margin-bottom: 20px;
+            color: #666;
+        }
+
+        .verification-code-input {
+            width: 100%;
+            padding: 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 10px;
+            font-size: 24px;
+            text-align: center;
+            letter-spacing: 10px;
+            margin-bottom: 20px;
+        }
+
+        .attempts-left {
+            font-size: 14px;
+            color: #e74c3c;
+            margin-bottom: 15px;
+        }
+
+        /* Messenger Screen */
+        .messenger-screen {
+            display: none;
+            height: 700px;
+        }
+
+        .messenger-screen.active {
+            display: flex;
+        }
+
+        /* Sidebar with tabs */
+        .sidebar {
+            width: 320px;
+            border-right: 1px solid #e0e0e0;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .sidebar-header {
+            padding: 20px;
+            background: #ff0000;
+            color: white;
+        }
+
+        .sidebar-header h2 {
+            font-size: 20px;
+            margin-bottom: 5px;
+        }
+
+        .sidebar-header .username {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+
+        .sidebar-tabs {
+            display: flex;
+            background: #f8f8f8;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .sidebar-tab {
+            flex: 1;
+            padding: 15px;
+            text-align: center;
+            cursor: pointer;
+            border: none;
+            background: transparent;
+            font-size: 14px;
+            font-weight: 600;
+            color: #666;
+            transition: all 0.3s;
+        }
+
+        .sidebar-tab.active {
+            background: white;
+            color: #ea6666;
+            border-bottom: 3px solid #0026ff;
+        }
+
+        .sidebar-content {
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .tab-panel {
+            display: none;
+        }
+
+        .tab-panel.active {
+            display: block;
+        }
+
+        /* Profile Section */
+        .profile-section {
+            padding: 20px;
+        }
+
+        .profile-picture-container {
+            text-align: center;
+            margin-bottom: 20px;
+        }
+
+        .profile-picture {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 4px solid #002fff;
+            margin-bottom: 15px;
+        }
+
+        .profile-picture-placeholder {
+            width: 120px;
+            height: 120px;
+            border-radius: 50%;
+            background: #e0e0e0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 48px;
+            margin: 0 auto 15px;
+            border: 4px solid #002fff;
+        }
+
+        .profile-upload-btn {
+            padding: 8px 20px;
+            background: #002fff;
+            color: white;
+            border: none;
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 13px;
+        }
+
+        .profile-info {
+            margin-top: 20px;
+        }
+
+        .profile-info label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 5px;
+            color: #333;
+        }
+
+        .profile-info input,
+        .profile-info textarea {
+            width: 100%;
+            padding: 10px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            margin-bottom: 15px;
+            font-size: 14px;
+        }
+
+        .profile-info textarea {
+            resize: vertical;
+            min-height: 80px;
+        }
+
+        .save-profile-btn {
+            width: 100%;
+            padding: 12px;
+            background: #0026ff;
+            color: white;
+            border: none;
+            border-radius: 10px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .logout-btn {
+            width: 100%;
+            margin-top: 10px;
+            padding: 10px;
+            background: rgba(25, 0, 255, 0.1);
+            border: none;
+            border-radius: 10px;
+            color: #e74c3c;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        /* Search Section */
+        .search-section {
+            padding: 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .search-input {
+            width: 100%;
+            padding: 10px 15px;
+            border: 2px solid #e0e0e0;
+            border-radius: 20px;
+            font-size: 14px;
+        }
+
+        .search-input:focus {
+            outline: none;
+            border-color: #002fff;
+        }
+
+        /* Contacts List */
+        .contacts-list {
+            padding: 10px 0;
+        }
+
+        .contact-item {
+            display: flex;
+            align-items: center;
+            padding: 12px 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+            position: relative;
+        }
+
+        .contact-item:hover {
+            background: #f8f8f8;
+        }
+
+        .contact-item.active {
+            background: #e8ebf9;
+        }
+
+        .contact-avatar {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+
+        .contact-avatar-placeholder {
+            width: 45px;
+            height: 45px;
+            border-radius: 50%;
+            background: #0026ff;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            margin-right: 12px;
+            flex-shrink: 0;
+        }
+
+        .contact-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .contact-name {
+            font-weight: 600;
+            margin-bottom: 3px;
+        }
+
+        .contact-bio {
+            font-size: 12px;
+            color: #888;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .contact-typing {
+            font-size: 12px;
+            color: #0026ff;
+            font-style: italic;
+        }
+
+        .unread-badge {
+            background: #ff0000;
+            color: white;
+            border-radius: 50%;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 11px;
+            font-weight: bold;
+            margin-left: auto;
+        }
+
+        /* Chat Area */
+        .chat-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            padding: 20px;
+            border-bottom: 1px solid #e0e0e0;
+            background: #f8f8f8;
+            display: flex;
+            align-items: center;
+        }
+
+        .chat-header-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin-right: 12px;
+        }
+
+        .chat-header-avatar-placeholder {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: #ff0000;
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            margin-right: 12px;
+        }
+
+        .chat-header h3 {
+            font-size: 18px;
+        }
+
+        .messages-container {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+            background: #fafafa;
+        }
+
+        .message {
+            margin-bottom: 15px;
+            display: flex;
+            align-items: flex-end;
+        }
+
+        .message.sent {
+            justify-content: flex-end;
+        }
+
+        .message-avatar {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 0 8px;
+        }
+
+        .message-avatar-placeholder {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff0000 0%, #1e00ff 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            margin: 0 8px;
+        }
+
+        /* Animated typing avatar */
+        .message-avatar-typing {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff0000 0%, #1e00ff 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 600;
+            margin: 0 8px;
+            animation: bounce 1s infinite;
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-5px); }
+        }
+
+        .message-content {
+            max-width: 60%;
+        }
+
+        .message-bubble {
+            padding: 12px 16px;
+            border-radius: 18px;
+            word-wrap: break-word;
+        }
+
+        .message.received .message-bubble {
+            background: #e0e0e0;
+            color: #333;
+        }
+
+        .message.sent .message-bubble {
+            background: #002fff;
+            color: white;
+        }
+
+        .message-media {
+            margin-top: 8px;
+            border-radius: 10px;
+            overflow: hidden;
+            max-width: 100%;
+        }
+
+        .message-media img {
+            max-width: 100%;
+            display: block;
+        }
+
+        .message-media video {
+            max-width: 100%;
+            display: block;
+        }
+
+        .message-time {
+            font-size: 11px;
+            margin-top: 5px;
+            opacity: 0.7;
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .message-status {
+            font-size: 14px;
+        }
+
+        /* Message Input Area */
+        .message-input-area {
+            padding: 20px;
+            border-top: 1px solid #e0e0e0;
+        }
+
+        .input-wrapper {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .attachment-btn {
+            padding: 10px;
+            background: #f0f0f0;
+            border: none;
+            border-radius: 50%;
+            cursor: pointer;
+            font-size: 18px;
+            width: 40px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .attachment-btn:hover {
+            background: #e0e0e0;
+        }
+
+        .message-input {
+            flex: 1;
+            padding: 12px 20px;
+            border: 2px solid #e0e0e0;
+            border-radius: 25px;
+            font-size: 15px;
+        }
+
+        .message-input:focus {
+            outline: none;
+            border-color: #0026ff;
+        }
+
+        .send-btn {
+            padding: 12px 30px;
+            background: #002fff;
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .send-btn:hover {
+            background: #0026ff;
+        }
+
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 100%;
+            color: #999;
+        }
+
+        .empty-state-icon {
+            font-size: 60px;
+            margin-bottom: 20px;
+        }
+
+        .hidden {
+            display: none !important;
+        }
+
+        /* File preview */
+        .file-preview {
+            padding: 10px;
+            background: #f8f8f8;
+            border-radius: 10px;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .file-preview-info {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .file-preview img,
+        .file-preview video {
+            max-width: 80px;
+            max-height: 80px;
+            border-radius: 5px;
+        }
+
+        .remove-file-btn {
+            background: #ff1900;
+            color: white;
+            border: none;
+            padding: 5px 15px;
+            border-radius: 15px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        /* Modal for full-size image/profile view */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+        }
+
+        .modal-close {
+            position: absolute;
+            top: 20px;
+            right: 40px;
+            color: white;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .modal-close:hover {
+            color: #ccc;
+        }
+
+        /* Profile modal */
+        .profile-modal {
+            display: none;
+            position: fixed;
+            z-index: 9999;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(255, 0, 0, 0.8);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .profile-modal.active {
+            display: flex;
+        }
+
+        .profile-modal-content {
+            background: linear-gradient(135deg, #ff0000 0%, #1e00ff 100%);
+            border-radius: 20px;
+            padding: 40px;
+            max-width: 500px;
+            width: 90%;
+            text-align: center;
+        }
+
+        .profile-modal-picture {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            object-fit: cover;
+            margin: 0 auto 20px;
+            border: 5px solid #002fff;
+            cursor: pointer;
+        }
+
+        .profile-modal-picture-placeholder {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, #ff0000 0%, #1e00ff 100%);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 80px;
+            margin: 0 auto 20px;
+            border: 5px solid #002fff;
+        }
+
+        .profile-modal-username {
+            font-size: 28px;
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+
+        .profile-modal-bio {
+            font-size: 16px;
+            color: #666;
+            margin-bottom: 20px;
+        }
+
+        .profile-modal-close {
+            padding: 12px 30px;
+            background: linear-gradient(135deg, #ff0000 0%, #1e00ff 100%);
+            color: white;
+            border: none;
+            border-radius: 25px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 16px;
+        }
+
+        /* Typing indicator in messages */
+        .typing-message {
+            display: flex;
+            align-items: flex-end;
+            margin-bottom: 15px;
+        }
+
+        .typing-bubble {
+            background: #e0e0e0;
+            padding: 12px 16px;
+            border-radius: 18px;
+            color: #0026ff;
+            font-style: italic;
+            font-size: 13px;
+        }
+
+        /* Make images clickable */
+        .message-media img {
+            cursor: pointer;
+            transition: opacity 0.3s;
+        }
+
+        .message-media img:hover {
+            opacity: 0.8;
+        }
+
+        /* Clickable avatars */
+        .chat-header-avatar,
+        .chat-header-avatar-placeholder,
+        .message-avatar,
+        .message-avatar-placeholder,
+        .contact-avatar,
+        .contact-avatar-placeholder {
+            cursor: pointer;
+        }
+
+        .chat-header-avatar:hover,
+        .message-avatar:hover,
+        .contact-avatar:hover {
+            opacity: 0.8;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Authentication Screen -->
+        <div class="auth-screen" id="authScreen">
+            <h1>💬 Simple Messenger</h1>
+            
+            <div class="auth-tabs">
+                <button class="tab-btn active" onclick="switchAuthTab('login')">Login</button>
+                <button class="tab-btn" onclick="switchAuthTab('register')">Register</button>
+            </div>
+
+            <!-- Login Form -->
+            <div class="auth-form active" id="loginForm">
+                <div class="form-group">
+                    <input type="text" id="loginUsername" placeholder="Username or Email" />
+                </div>
+                <div class="form-group">
+                    <div style="position: relative; display: inline-block; width: 100%; max-width: 400px;">
+                        <input type="password" id="loginPassword" placeholder="Password" style="padding-right: 45px;" />
+                        <span onclick="togglePassword('loginPassword')" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 20px;">👁️</span>
+                    </div>
+                </div>
+                <button class="btn-primary" onclick="login()">Login</button>
+                <div style="margin-top: 15px;">
+                    <a href="#" onclick="showForgotPassword(); return false;" style="color: #002fff; text-decoration: none; font-size: 14px;">Forgot Password?</a>
+                </div>
+                <div class="error-message" id="loginError"></div>
+            </div>
+
+            <!-- Register Form -->
+            <div class="auth-form" id="registerForm">
+                <div class="form-group">
+                    <input type="text" id="registerUsername" placeholder="Username (letters, numbers, and _ only)" />
+                </div>
+                <div class="form-group">
+                    <input type="email" id="registerEmail" placeholder="Email"/>
+                </div>
+                <div class="form-group">
+                    <div style="position: relative; display: inline-block; width: 100%; max-width: 400px;">
+                        <input type="password" id="registerPassword" placeholder="Password (min 6 characters)" style="padding-right: 45px;" />
+                        <span onclick="togglePassword('registerPassword')" style="position: absolute; right: 15px; top: 50%; transform: translateY(-50%); cursor: pointer; font-size: 20px;">👁️</span>
+                    </div>
+                </div>
+                <button class="btn-primary" onclick="register()">Register</button>
+                <div class="error-message" id="registerError"></div>
+                <div class="success-message" id="registerSuccess"></div>
+            </div>
+
+            <!-- Forgot Password Form -->
+            <div class="auth-form" id="forgotPasswordForm">
+                <div class="form-group">
+                    <input type="text" id="forgotEmailOrUsername" placeholder="Enter your email or username" />
+                </div>
+                <button class="btn-primary" onclick="requestPasswordReset()">Send Reset Code</button>
+                <div style="margin-top: 15px;">
+                    <a href="#" onclick="switchAuthTab('login'); return false;" style="color: #002fff; text-decoration: none; font-size: 14px;">← Back to Login</a>
+                </div>
+                <div class="error-message" id="forgotError"></div>
+                <div class="success-message" id="forgotSuccess"></div>
+            </div>
+        </div>
+
+        <!-- Email Verification Modal -->
+        <div class="verification-modal" id="verificationModal">
+            <div class="verification-content">
+                <h2>📧 Email Verification</h2>
+                <p>We've sent a 6-digit code to <strong id="verificationEmail"></strong></p>
+                <input type="text" class="verification-code-input" id="verificationCode" placeholder="000000" maxlength="6" />
+                <button class="btn-primary" onclick="verifyCode()">Verify</button>
+                <div class="error-message" id="verificationError"></div>
+            </div>
+        </div>
+
+        <!-- Reset Password Modal -->
+        <div class="verification-modal" id="resetPasswordModal">
+            <div class="verification-content">
+                <h2>🔒 Reset Password</h2>
+                <p>Enter the code sent to <strong id="resetEmail"></strong></p>
+                <input type="text" class="verification-code-input" id="resetCode" placeholder="000000" maxlength="6" />
+                <div class="form-group" style="margin-top: 20px;">
+                    <input type="password" id="newPassword" placeholder="New Password (min 6 characters)" style="width: 100%; padding: 15px; border: 2px solid #e0e0e0; border-radius: 10px; font-size: 16px;" />
+                </div>
+                <button class="btn-primary" onclick="resetPassword()" style="margin-top: 20px;">Reset Password</button>
+                <div class="error-message" id="resetError"></div>
+            </div>
+        </div>
+
+        <!-- Messenger Screen -->
+        <div class="messenger-screen" id="messengerScreen">
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-header">
+                    <h2>Messenger</h2>
+                    <div class="username" id="currentUsername"></div>
+                </div>
+                
+                <div class="sidebar-tabs">
+                    <button class="sidebar-tab active" onclick="switchSidebarTab('chats')">💬 Chats</button>
+                    <button class="sidebar-tab" onclick="switchSidebarTab('users')">👥 Users</button>
+                    <button class="sidebar-tab" onclick="switchSidebarTab('profile')">👤 Profile</button>
+                </div>
+
+                <div class="sidebar-content">
+                    <!-- Chats Tab -->
+                    <div class="tab-panel active" id="chatsPanel">
+                        <div class="contacts-list" id="contactsList"></div>
+                    </div>
+
+                    <!-- Users Tab (Search) -->
+                    <div class="tab-panel" id="usersPanel">
+                        <div class="search-section">
+                            <input type="text" class="search-input" id="searchInput" placeholder="Search users..." oninput="searchUsers()" />
+                        </div>
+                        <div class="contacts-list" id="searchResults"></div>
+                    </div>
+
+                    <!-- Profile Tab -->
+                    <div class="tab-panel" id="profilePanel">
+                        <div class="profile-section">
+                            <div class="profile-picture-container">
+                                <div id="profilePictureContainer">
+                                    <div class="profile-picture-placeholder" id="profilePlaceholder">👤</div>
+                                </div>
+                                <input type="file" id="profilePictureInput" accept="image/*" style="display:none;" onchange="uploadProfilePicture()" />
+                                <button class="profile-upload-btn" onclick="document.getElementById('profilePictureInput').click()">Change Picture</button>
+                            </div>
+                            
+                            <div class="profile-info">
+                                <label>Username</label>
+                                <input type="text" id="profileUsername" readonly style="background: #f5f5f5;" />
+                                
+                                <label>Email</label>
+                                <input type="email" id="profileEmail" />
+                                
+                                <label>Bio</label>
+                                <textarea id="profileBio" placeholder="Tell us about yourself..."></textarea>
+                                
+                                <button class="save-profile-btn" onclick="saveProfile()">Save Profile</button>
+                                <button class="logout-btn" onclick="logout()">Logout</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Chat Area -->
+            <div class="chat-area">
+                <div class="chat-header" id="chatHeader">
+                    <h3>Select a contact to start messaging</h3>
+                </div>
+                <div class="messages-container" id="messagesContainer">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">💬</div>
+                        <p>Select a conversation to start messaging</p>
+                    </div>
+                </div>
+                <div class="message-input-area hidden" id="messageInputArea">
+                    <div id="filePreviewArea"></div>
+                    <div class="input-wrapper">
+                        <input type="file" id="fileInput" accept="image/*,video/*" style="display:none;" onchange="handleFileSelect()" />
+                        <button class="attachment-btn" onclick="document.getElementById('fileInput').click()" title="Attach image or video">📎</button>
+                        <input type="text" class="message-input" id="messageInput" placeholder="Type a message..." onkeypress="handleEnter(event)" oninput="notifyTyping()" />
+                        <button class="send-btn" onclick="sendMessage()">Send</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Image Modal -->
+    <div class="modal" id="imageModal" onclick="closeModal()">
+        <span class="modal-close">&times;</span>
+        <img class="modal-content" id="modalImage">
+    </div>
+
+    <!-- Profile Modal -->
+    <div class="profile-modal" id="profileModal" onclick="closeProfileModal(event)">
+        <div class="profile-modal-content" onclick="event.stopPropagation()">
+            <div id="profileModalPictureContainer"></div>
+            <div class="profile-modal-username" id="profileModalUsername"></div>
+            <div class="profile-modal-bio" id="profileModalBio"></div>
+            <button class="profile-modal-close" onclick="closeProfileModal()">Close</button>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
